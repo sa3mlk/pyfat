@@ -1,0 +1,16 @@
+A simple FAT implementation in Python.
+
+TODO:
+	* Read files
+	* Write files
+	* (Un)delete files
+	* Change file attributes
+	* Change file timestamps
+	* Make directories
+	* Add FAT12 and FAT32 support
+	* Support long filenames?
+	* Defrag functionality?
+	* Add exFAT support?
+	* Extensive unit tests and preferably cross reference to another FAT implementation
+	* More...
+
