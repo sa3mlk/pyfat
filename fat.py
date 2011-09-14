@@ -26,9 +26,12 @@ TODO:
 class FAT(object):
 	Version = "0.01"
 
+	# Static constants used
 	EOF_FAT12 = 0x00000ff8
 	EOF_FAT16 = 0x0000fff8
 	EOF_FAT32 = 0x0ffffff8
+	# The size of a FAT directory entry
+	DIRSIZE = 32
 
 	class Type:
 		FAT12 = 1
@@ -53,24 +56,36 @@ class FAT(object):
 
 	def __init__(self, fd):
 		self.fd = fd
-
-		# FIXME: Hardcoded for now; only FAT16 support
-		self.fat_type = FAT.Type.FAT16
-		self.EOF = FAT.EOF_FAT16
-
 		self.info = self.__parse_bootsector()
 
 		# Calculate the offset to the first FAT
 		self.__fat_start = self.info["reserved_sectors"] * self.info["sector_size"]
+		self.fat_type, self.EOF = self.__determine_type()
+
 		# Calculate the offset to the root directory
 		self.__root_dir = ((self.info["num_fats"] * self.info["sectors_per_fat"]) *
 			self.info["sector_size"]) + self.__fat_start
-		# Calculate the offset to the actual data start
-		self.__data_start = self.__root_dir + (32 * self.info["root_entries"])
 
-		#self.__dirs = self.__scan_dirs(offset=self.__root_dir + 32)
+		# Calculate the offset to the actual data start
+		self.__data_start = self.__root_dir + (FAT.DIRSIZE * self.info["root_entries"])
+
+		#self.__dirs = self.__scan_dirs(offset=self.__root_dir + FAT.DIRSIZE)
 		#for k, v in self.__dirs.iteritems():
 			#print "name %-13.13s cluster %d" % (k, v["cluster"])
+
+	# Determines which type of FAT it is depending on the properties
+	def __determine_type(self):
+		root_dir_sectors = ((self.info["root_entries"] * FAT.DIRSIZE) +
+			(self.info["sector_size"] - 1)) / self.info["sector_size"]
+		data_sectors = self.info["total_sectors"] - (self.info["reserved_sectors"] +
+			(self.info["num_fats"] * self.info["sectors_per_fat"]) + root_dir_sectors)
+		num_clusters = data_sectors / self.info["sectors_per_cluster"]
+		if num_clusters < 4085:
+			return (FAT.Type.FAT12, FAT.EOF_FAT12)
+		elif num_clusters < 65525:
+			return (FAT.Type.FAT16, FAT.EOF_FAT16)
+		else:
+			return (FAT.Type.FAT32, FAT.EOF_FAT32)
 
 	def __next_cluster(self, cluster):
 		offset = self.__fat_start
@@ -93,6 +108,8 @@ class FAT(object):
 		return chain[:-1]
 
 	def read_cluster(self, cluster):
+		if cluster < 2:
+			return ""
 		self.fd.seek(self.__cluster_to_offset(cluster))
 		return self.fd.read(self.info["sectors_per_cluster"] * self.info["sector_size"])
 
@@ -151,16 +168,20 @@ class FAT(object):
 
 	# Read and parse a FAT directory entry
 	def __read_dir_entry(self):
-		de = unpack("<11sBxBHHH2xHHHL", self.fd.read(32))
-		return {
-			"name": self.__normalize_name(de[0]),
-			"attributes": de[1],
-			"created": self.__parse_fat_datetime(de[2], de[3], de[4]),
-			"last_accessed": self.__parse_fat_date(de[5]),
-			"modified": self.__parse_fat_datetime(0, de[6], de[7]),
-			"cluster": de[8],
-			"size": de[9]
-		}
+		de = unpack("<11sBxBHHH2xHHHL", self.fd.read(FAT.DIRSIZE))
+		# TODO: Handle long filenames
+		if de[1] & FAT.Attribute.LONGNAME:
+			return None
+		else:
+			return {
+				"name": self.__normalize_name(de[0]),
+				"attributes": de[1],
+				"created": self.__parse_fat_datetime(de[2], de[3], de[4]),
+				"last_accessed": self.__parse_fat_date(de[5]),
+				"modified": self.__parse_fat_datetime(0, de[6], de[7]),
+				"cluster": de[8],
+				"size": de[9]
+			}
 
 	# Normalizes a 8.3 FAT filename
 	def __normalize_name(self, fatname):
@@ -176,6 +197,8 @@ class FAT(object):
 		items = []
 		for i in range(self.info["root_entries"]):
 			de = self.__read_dir_entry()
+			if not de:
+				continue
 			# Skip deleted files
 			if de["name"][0] == '\xe9':
 				continue
@@ -203,23 +226,38 @@ class FAT(object):
 
 	# Read all files from a directory
 	def read_dir(self, path=""):
-		root_dir_offset = self.__root_dir + 32
+		root_dir_offset = self.__root_dir + FAT.DIRSIZE
 		if not len(path) or path == "." or path == "/":
 			return self.__read_dir(root_dir_offset)
 		else:
-			for f in self.__read_dir(root_dir_offset):
-				if f["attributes"] & FAT.Attribute.DIRECTORY and f["name"].lower() == path:
-					return self.__read_dir(self.__cluster_to_offset(f["cluster"]))
-			raise FAT.FileNotFoundError(path)
+			dirs = path.split("/")
+			print "dirs", dirs
+			for d in dirs:
+				for f in self.__read_dir(root_dir_offset):
+					if f["attributes"] & FAT.Attribute.DIRECTORY and f["name"].lower() == path:
+						return self.__read_dir(self.__cluster_to_offset(f["cluster"]))
+				raise FAT.FileNotFoundError(path)
 
 def main():
-	fat = FAT(file("test2.bin", "rb"))
-	for k, v in fat.info.iteritems():
-		print "%-22s%s" % (k, v)
-	print ""
+	fat = FAT(file("fat16.bin", "rb"))
+	#for k, v in fat.info.iteritems():
+		#print "%-22s%s" % (k, v)
+	#print ""
 
+	dirs = ["", "dosfs", "folder", "folder/deep1"]
+
+	for d in dirs:
+		print "Contents in", d
+		for f in fat.read_dir(d):
+			if f["attributes"] & FAT.Attribute.DIRECTORY:
+				print "%-12.12s <DIR>" % f["name"]
+			else:
+				print "%-12.12s %d bytes" % (f["name"], f["size"])
+		print ""
+
+	'''
 	print "Files in volume \"%s\"\n" % fat.get_label()
-	files = fat.read_dir("bin")
+	files = fat.read_dir("")
 	for f in files:
 		# Very "raw" reading for now :)
 		if not f["attributes"] & FAT.Attribute.DIRECTORY:
@@ -229,6 +267,7 @@ def main():
 
 		print "%-13.13s%10.d bytes" % (f["name"], f["size"]),
 		print fat.get_cluster_chain(f["cluster"])
+	'''
 
 if __name__ == "__main__":
 	main()
