@@ -226,17 +226,18 @@ class FAT(object):
 
 	# Read all files from a directory
 	def read_dir(self, path=""):
-		root_dir_offset = self.__root_dir + FAT.DIRSIZE
-		if not len(path) or path == "." or path == "/":
-			return self.__read_dir(root_dir_offset)
-		else:
-			dirs = path.split("/")
-			print "dirs", dirs
-			for d in dirs:
-				for f in self.__read_dir(root_dir_offset):
-					if f["attributes"] & FAT.Attribute.DIRECTORY and f["name"].lower() == path:
-						return self.__read_dir(self.__cluster_to_offset(f["cluster"]))
+		# Start with the root directory
+		items = self.__read_dir(self.__root_dir + FAT.DIRSIZE)
+		# Filter out empty strings
+		subdirs = filter(len, path.split("/"))
+		# Now look in all sub directories for our path
+		for d in subdirs:
+			# Get the one and only directory we are looking for
+			items = filter(lambda x: x["attributes"] & FAT.Attribute.DIRECTORY and x["name"].lower() == d, items)
+			if not items:
 				raise FAT.FileNotFoundError(path)
+			items = self.__read_dir(self.__cluster_to_offset(items[0]["cluster"]))
+		return items
 
 def main():
 	fat = FAT(file("fat16.bin", "rb"))
@@ -244,7 +245,15 @@ def main():
 		#print "%-22s%s" % (k, v)
 	#print ""
 
-	dirs = ["", "dosfs", "folder", "folder/deep1"]
+	dirs = [
+		"",
+		"dosfs",
+		"euler",
+		"folder",
+		"folder/deep1",
+		"folder/deep1/deep2",
+		"folder/deep1/deep2/deep3"
+	]
 
 	for d in dirs:
 		print "Contents in", d
