@@ -4,25 +4,6 @@ from datetime import datetime, date
 from struct import unpack
 from os import SEEK_SET
 
-'''
-Work In Progress!
-
-TODO:
- * Read files
- * Write files
- * (Un)delete files
- * Change file attributes
- * Change file timestamps
- * Make directories
- * Add FAT12 and FAT32 support
- * Long filenames?
- * Defrag functionality?
- * Add exFAT support?
- * Extensive unit tests and preferably cross
-   reference to another FAT implementation
- * More...
-'''
-
 class FAT(object):
 	Version = "0.01"
 
