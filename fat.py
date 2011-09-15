@@ -50,9 +50,6 @@ class FAT(object):
 		# Calculate the offset to the actual data start
 		self.__data_start = self.__root_dir + (FAT.DIRSIZE * self.info["root_entries"])
 
-		# Calculate the cluster size in bytes
-		self.__cluster_size = self.info["sector_size"] * self.info["sectors_per_cluster"]
-
 	# Determines which type of FAT it is depending on the properties
 	def __determine_type(self):
 		root_dir_sectors = ((self.info["root_entries"] * FAT.DIRSIZE) +
@@ -193,6 +190,9 @@ class FAT(object):
 		raise FAT.FileNotFoundError(path)
 
 	def write_file(self, path):
+		raise NotImplementedError
+
+	def delete_file(self, path):
 		raise NotImplementedError
 
 	# Read all files from a directory
