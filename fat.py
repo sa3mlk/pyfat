@@ -50,9 +50,8 @@ class FAT(object):
 		# Calculate the offset to the actual data start
 		self.__data_start = self.__root_dir + (FAT.DIRSIZE * self.info["root_entries"])
 
-		#self.__dirs = self.__scan_dirs(offset=self.__root_dir + FAT.DIRSIZE)
-		#for k, v in self.__dirs.iteritems():
-			#print "name %-13.13s cluster %d" % (k, v["cluster"])
+		# Calculate the cluster size in bytes
+		self.__cluster_size = self.info["sector_size"] * self.info["sectors_per_cluster"]
 
 	# Determines which type of FAT it is depending on the properties
 	def __determine_type(self):
@@ -83,7 +82,7 @@ class FAT(object):
 
 	def get_cluster_chain(self, cluster):
 		chain = [cluster]
-		while cluster != self.EOF:
+		while cluster <= self.EOF:
 			chain.append(self.__next_cluster(cluster))
 			cluster = chain[-1]
 		return chain[:-1]
@@ -98,19 +97,6 @@ class FAT(object):
 	def __cluster_to_offset(self, cluster):
 		offset = ((cluster - 2) * self.info["sectors_per_cluster"]) * self.info["sector_size"]
 		return self.__data_start + offset
-
-	# Recursively scan all directories in the FAT image
-	def __scan_dirs(self, offset, parent=""):
-		items = self.__read_dir(offset)
-		dirs = {}
-		for i in items:
-			if i["attributes"] & FAT.Attribute.DIRECTORY:
-				dirs[parent + "/" + i["name"]] = i
-				if i["name"] != "." and i["name"] != "..":
-					subdir = self.__scan_dirs(self.__cluster_to_offset(i["cluster"]), i["name"])
-					for k, v in subdir.iteritems():
-						dirs["/" + k] = v
-		return dirs
 
 	# Read everything we need from the bootsector
 	def __parse_bootsector(self):
@@ -171,7 +157,7 @@ class FAT(object):
 			return fatname[:8].strip(" ")
 		else:
 			# Otherwise strip the spaces and dotify plus the extension
-			return fatname[:8].strip(" ") + "." + fatname[8:]
+			return fatname[:8].strip(" ") + "." + fatname[8:].strip(" ")
 
 	def __read_dir(self, offset):
 		self.fd.seek(offset, SEEK_SET)
@@ -196,11 +182,15 @@ class FAT(object):
 		return unpack("11s", self.fd.read(11))[0].strip(" ")
 
 	def read_file(self, path):
-		root = self.read_dir("")
-		dirs = path.split("/")
-		for part in path.split("/"):
-			print part
-		raise NotImplementedError
+		pos = path.rfind("/")
+		items = self.read_dir("" if pos < 0 else path[:pos])
+		if items:
+			items = filter(lambda x: x["name"].lower() == path[pos+1:], items)
+			if items:
+				item = items[0]
+				data = "".join([self.read_cluster(c) for c in self.get_cluster_chain(item["cluster"])])
+				return data[:item["size"]]
+		raise FAT.FileNotFoundError(path)
 
 	def write_file(self, path):
 		raise NotImplementedError
@@ -222,9 +212,14 @@ class FAT(object):
 
 def main():
 	fat = FAT(file("fat16.bin", "rb"))
-	#for k, v in fat.info.iteritems():
-		#print "%-22s%s" % (k, v)
-	#print ""
+	for k, v in fat.info.iteritems():
+		print "%-22s%s" % (k, v)
+	print ""
+
+	data = fat.read_file("fat.py")
+	with file("slask", "wb") as f:
+		f.write(data)
+	print fat.read_file("folder/bmi.py")
 
 	dirs = [
 		"",
