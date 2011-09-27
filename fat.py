@@ -41,7 +41,7 @@ class FAT(object):
 
 		# Calculate the offset to the first FAT
 		self.__fat_start = self.info["reserved_sectors"] * self.info["sector_size"]
-		self.fat_type, self.EOF = self.__determine_type()
+		self.fat_type, self.EOF, self.__num_clusters = self.__determine_type()
 
 		# Calculate the offset to the root directory
 		self.__root_dir = ((self.info["num_fats"] * self.info["sectors_per_fat"]) *
@@ -58,24 +58,35 @@ class FAT(object):
 			(self.info["num_fats"] * self.info["sectors_per_fat"]) + root_dir_sectors)
 		num_clusters = data_sectors / self.info["sectors_per_cluster"]
 		if num_clusters < 4085:
-			return (FAT.Type.FAT12, FAT.EOF_FAT12)
+			return (FAT.Type.FAT12, FAT.EOF_FAT12, num_clusters)
 		elif num_clusters < 65525:
-			return (FAT.Type.FAT16, FAT.EOF_FAT16)
+			return (FAT.Type.FAT16, FAT.EOF_FAT16, num_clusters)
 		else:
-			return (FAT.Type.FAT32, FAT.EOF_FAT32)
+			return (FAT.Type.FAT32, FAT.EOF_FAT32, num_clusters)
 
 	def __next_cluster(self, cluster):
 		offset = self.__fat_start
 		if self.fat_type == FAT.Type.FAT12:
 			offset += cluster + (cluster / 2)
+			raise NotImplementedError
 		elif self.fat_type == FAT.Type.FAT16:
 			offset += cluster * 2
+			self.fd.seek(offset)
+			return unpack("<H", self.fd.read(2))[0]
 		elif self.fat_type == FAT.Type.FAT32:
 			offset += cluster * 4
+			self.fd.seek(offset)
+			return unpack("<L", self.fd.read(4))[0]
 		else:
 			raise NotImplementedError
-		self.fd.seek(offset)
-		return unpack("<H", self.fd.read(2))[0]
+
+	def next_free_cluster(self, start=2):
+		offset = self.__fat_start
+		for i in range(start, self.__num_clusters):
+			cluster = self.__next_cluster(i)
+			if cluster == 0:
+				return i
+		return self.EOF
 
 	def get_cluster_chain(self, cluster):
 		chain = [cluster]
@@ -193,6 +204,8 @@ class FAT(object):
 		raise NotImplementedError
 
 	def delete_file(self, path):
+		# Find the directory entry and replace the first character in the filenames
+		# with a 0xe5.  Then get the cluster chain and set all clusters to zero.
 		raise NotImplementedError
 
 	# Read all files from a directory
@@ -216,6 +229,12 @@ def main():
 		print "%-22s%s" % (k, v)
 	print ""
 
+	cluster = 1
+	for i in range(20):
+		cluster = fat.next_free_cluster(cluster + 1)
+		print cluster, hex(cluster) 
+
+	'''
 	data = fat.read_file("fat.py")
 	with file("slask", "wb") as f:
 		f.write(data)
@@ -239,6 +258,8 @@ def main():
 			else:
 				print "%-12.12s %d bytes" % (f["name"], f["size"])
 		print ""
+
+	'''
 
 	'''
 	print "Files in volume \"%s\"\n" % fat.get_label()
