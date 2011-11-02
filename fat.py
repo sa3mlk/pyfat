@@ -68,7 +68,11 @@ class FAT(object):
 		offset = self.__fat_start
 		if self.fat_type == FAT.Type.FAT12:
 			offset += cluster + (cluster / 2)
-			raise NotImplementedError
+			self.fd.seek(offset)
+			if cluster & 1:
+				return unpack("<H", self.fd.read(2))[0] >> 4
+			else:
+				return unpack("<H", self.fd.read(2))[0] & 0xfff
 		elif self.fat_type == FAT.Type.FAT16:
 			offset += cluster * 2
 			self.fd.seek(offset)
@@ -190,6 +194,7 @@ class FAT(object):
 		return unpack("11s", self.fd.read(11))[0].strip(" ")
 
 	def read_file(self, path):
+		path = path.lower()
 		pos = path.rfind("/")
 		items = self.read_dir("" if pos < 0 else path[:pos])
 		if items:
