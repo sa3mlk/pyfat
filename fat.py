@@ -69,10 +69,8 @@ class FAT(object):
 		if self.fat_type == FAT.Type.FAT12:
 			offset += cluster + (cluster / 2)
 			self.fd.seek(offset)
-			if cluster & 1:
-				return unpack("<H", self.fd.read(2))[0] >> 4
-			else:
-				return unpack("<H", self.fd.read(2))[0] & 0xfff
+			value = unpack("<H", self.fd.read(2))[0]
+			return value >> 4 if cluster & 1 else value & 0xfff
 		elif self.fat_type == FAT.Type.FAT16:
 			offset += cluster * 2
 			self.fd.seek(offset)
