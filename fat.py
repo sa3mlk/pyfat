@@ -83,7 +83,6 @@ class FAT(object):
 			raise NotImplementedError
 
 	def next_free_cluster(self, start=2):
-		offset = self.__fat_start
 		for i in range(start, self.__num_clusters):
 			cluster = self.__next_cluster(i)
 			if cluster == 0:
