@@ -4,6 +4,11 @@ from datetime import datetime, date
 from struct import unpack
 from os import SEEK_SET
 
+# TODO:
+#  Add docstrings
+#  write_file
+#  etc.
+
 class FAT(object):
 	Version = "0.01"
 
@@ -37,6 +42,7 @@ class FAT(object):
 
 	def __init__(self, fd):
 		self.fd = fd
+		self.__start = fd.tell()
 		self.info = self.__parse_bootsector()
 
 		# Calculate the offset to the first FAT
@@ -68,16 +74,16 @@ class FAT(object):
 		offset = self.__fat_start
 		if self.fat_type == FAT.Type.FAT12:
 			offset += cluster + (cluster / 2)
-			self.fd.seek(offset)
+			self.fd.seek(self.__start + offset, SEEK_SET)
 			value = unpack("<H", self.fd.read(2))[0]
 			return value >> 4 if cluster & 1 else value & 0xfff
 		elif self.fat_type == FAT.Type.FAT16:
 			offset += cluster * 2
-			self.fd.seek(offset)
+			self.fd.seek(self.__start + offset, SEEK_SET)
 			return unpack("<H", self.fd.read(2))[0]
 		elif self.fat_type == FAT.Type.FAT32:
 			offset += cluster * 4
-			self.fd.seek(offset)
+			self.fd.seek(self.__start + offset, SEEK_SET)
 			return unpack("<L", self.fd.read(4))[0]
 		else:
 			raise NotImplementedError
@@ -91,6 +97,8 @@ class FAT(object):
 
 	def get_cluster_chain(self, cluster):
 		chain = [cluster]
+		if cluster == 0:
+			return chain
 		while cluster <= self.EOF:
 			chain.append(self.__next_cluster(cluster))
 			cluster = chain[-1]
@@ -99,7 +107,7 @@ class FAT(object):
 	def read_cluster(self, cluster):
 		if cluster < 2:
 			return ""
-		self.fd.seek(self.__cluster_to_offset(cluster))
+		self.fd.seek(self.__start + self.__cluster_to_offset(cluster))
 		return self.fd.read(self.info["sectors_per_cluster"] * self.info["sector_size"])
 
 	# Calculate the logical sector number from the cluster
@@ -236,12 +244,6 @@ def main():
 		cluster = fat.next_free_cluster(cluster + 1)
 		print cluster, hex(cluster) 
 
-	'''
-	data = fat.read_file("fat.py")
-	with file("slask", "wb") as f:
-		f.write(data)
-	print fat.read_file("folder/bmi.py")
-
 	dirs = [
 		"",
 		"dosfs",
@@ -261,21 +263,6 @@ def main():
 				print "%-12.12s %d bytes" % (f["name"], f["size"])
 		print ""
 
-	'''
-
-	'''
-	print "Files in volume \"%s\"\n" % fat.get_label()
-	files = fat.read_dir("")
-	for f in files:
-		# Very "raw" reading for now :)
-		if not f["attributes"] & FAT.Attribute.DIRECTORY:
-			with file("dump/%s" % f["name"], "wb") as out:
-				for c in fat.get_cluster_chain(f["cluster"]):
-					out.write(fat.read_cluster(c))
-
-		print "%-13.13s%10.d bytes" % (f["name"], f["size"]),
-		print fat.get_cluster_chain(f["cluster"])
-	'''
 
 if __name__ == "__main__":
 	main()
