@@ -46,7 +46,8 @@ class FAT(object):
 		self.info = self.__parse_bootsector()
 
 		# Calculate the offset to the first FAT
-		self.__fat_start = self.info["reserved_sectors"] * self.info["sector_size"]
+		self.__fat_start = self.__start + self.info["reserved_sectors"] * self.info["sector_size"]
+
 		self.fat_type, self.EOF, self.__num_clusters = self.__determine_type()
 
 		# Calculate the offset to the root directory
@@ -74,16 +75,16 @@ class FAT(object):
 		offset = self.__fat_start
 		if self.fat_type == FAT.Type.FAT12:
 			offset += cluster + (cluster / 2)
-			self.fd.seek(self.__start + offset, SEEK_SET)
+			self.fd.seek(offset, SEEK_SET)
 			value = unpack("<H", self.fd.read(2))[0]
 			return value >> 4 if cluster & 1 else value & 0xfff
 		elif self.fat_type == FAT.Type.FAT16:
 			offset += cluster * 2
-			self.fd.seek(self.__start + offset, SEEK_SET)
+			self.fd.seek(offset, SEEK_SET)
 			return unpack("<H", self.fd.read(2))[0]
 		elif self.fat_type == FAT.Type.FAT32:
 			offset += cluster * 4
-			self.fd.seek(self.__start + offset, SEEK_SET)
+			self.fd.seek(offset, SEEK_SET)
 			return unpack("<L", self.fd.read(4))[0]
 		else:
 			raise NotImplementedError
@@ -99,7 +100,7 @@ class FAT(object):
 		chain = [cluster]
 		if cluster == 0:
 			return chain
-		while cluster <= self.EOF:
+		while cluster < self.EOF:
 			chain.append(self.__next_cluster(cluster))
 			cluster = chain[-1]
 		return chain[:-1]
@@ -107,11 +108,11 @@ class FAT(object):
 	def read_cluster(self, cluster):
 		if cluster < 2:
 			return ""
-		self.fd.seek(self.__start + self.__cluster_to_offset(cluster))
+		self.fd.seek(self.cluster_to_offset(cluster))
 		return self.fd.read(self.info["sectors_per_cluster"] * self.info["sector_size"])
 
 	# Calculate the logical sector number from the cluster
-	def __cluster_to_offset(self, cluster):
+	def cluster_to_offset(self, cluster):
 		offset = ((cluster - 2) * self.info["sectors_per_cluster"]) * self.info["sector_size"]
 		return self.__data_start + offset
 
@@ -221,49 +222,15 @@ class FAT(object):
 	# Read all files from a directory
 	def read_dir(self, path=""):
 		# Start with the root directory
-		items = self.__read_dir(self.__root_dir + FAT.DIRSIZE)
+		items = self.__read_dir(self.__root_dir)
 		# Filter out empty strings
-		subdirs = filter(len, path.split("/"))
+		subdirs = filter(len, path.lower().split("/"))
 		# Now look in all sub directories for our path
 		for d in subdirs:
 			# Get the one and only directory we are looking for
 			items = filter(lambda x: x["attributes"] & FAT.Attribute.DIRECTORY and x["name"].lower() == d, items)
 			if not items:
 				raise FAT.FileNotFoundError(path)
-			items = self.__read_dir(self.__cluster_to_offset(items[0]["cluster"]))
+			items = self.__read_dir(self.cluster_to_offset(items[0]["cluster"]))
 		return items
-
-def main():
-	fat = FAT(file("fat16.bin", "rb"))
-	for k, v in fat.info.iteritems():
-		print "%-22s%s" % (k, v)
-	print ""
-
-	cluster = 1
-	for i in range(20):
-		cluster = fat.next_free_cluster(cluster + 1)
-		print cluster, hex(cluster) 
-
-	dirs = [
-		"",
-		"dosfs",
-		"euler",
-		"folder",
-		"folder/deep1",
-		"folder/deep1/deep2",
-		"folder/deep1/deep2/deep3"
-	]
-
-	for d in dirs:
-		print "Contents in", d
-		for f in fat.read_dir(d):
-			if f["attributes"] & FAT.Attribute.DIRECTORY:
-				print "%-12.12s <DIR>" % f["name"]
-			else:
-				print "%-12.12s %d bytes" % (f["name"], f["size"])
-		print ""
-
-
-if __name__ == "__main__":
-	main()
 
