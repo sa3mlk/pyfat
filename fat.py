@@ -165,7 +165,8 @@ class FAT(object):
 				"last_accessed": self.__parse_fat_date(de[5]),
 				"modified": self.__parse_fat_datetime(0, de[6], de[7]),
 				"cluster": de[8],
-				"size": de[9]
+				"size": de[9],
+				"direntry": self.fd.tell() - FAT.DIRSIZE
 			}
 
 	# Normalizes a 8.3 FAT filename
@@ -234,3 +235,16 @@ class FAT(object):
 			items = self.__read_dir(self.cluster_to_offset(items[0]["cluster"]))
 		return items
 
+	def set_attribute(self, path, attr):
+		slash = path.rfind("/")
+		filename = path
+		if slash > 0:
+			path, filename = path[:slash], path[slash+1:]
+		else:
+			path = "/"
+
+		for f in self.read_dir(path):
+			if filename == f["name"]:
+				self.fd.seek(f["direntry"]+11, SEEK_SET)
+				self.fd.write(pack("B", attr))
+				break
