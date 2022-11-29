@@ -177,9 +177,7 @@ class FAT(object):
             return fatname[:8].strip(' ')
         else:
             # Otherwise strip the spaces and dotify plus the extension
-            #return fatname[:8].strip(' ') + '.' + fatname[8:].strip(' ')
-            name = fatname[:8].strip(' ') + '.' + fatname[8:].strip(' ')
-            return name if len(name) else '<spaces>'
+            return fatname[:8].strip(' ') + '.' + fatname[8:].strip(' ')
 
     def __read_dir(self, offset):
         self.fd.seek(offset, SEEK_SET)
